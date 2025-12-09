@@ -1,0 +1,7 @@
+{
+  "name": "SolarHand 3D",
+  "description": "Interactive 3D Solar System with webcam-based hand gesture navigation.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
