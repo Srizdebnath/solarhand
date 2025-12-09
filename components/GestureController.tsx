@@ -13,16 +13,17 @@ declare global {
 
 interface GestureControllerProps {
   onGesture: (gesture: GestureState) => void;
+  onLoaded?: () => void;
 }
 
-const GestureController: React.FC<GestureControllerProps> = ({ onGesture }) => {
+const GestureController: React.FC<GestureControllerProps> = ({ onGesture, onLoaded }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const lastGestureTime = useRef<number>(0);
   const lastPalmX = useRef<number>(0.5);
   const lastAngle = useRef<number | null>(null);
-  
+
   // Throttle state for Open Palm to avoid flickering toggles
   const openPalmFrameCount = useRef<number>(0);
 
@@ -58,7 +59,10 @@ const GestureController: React.FC<GestureControllerProps> = ({ onGesture }) => {
     });
 
     camera.start()
-      .then(() => setIsLoaded(true))
+      .then(() => {
+        setIsLoaded(true);
+        if (onLoaded) onLoaded();
+      })
       .catch((err: any) => console.error("Camera error:", err));
 
     return () => {
@@ -77,7 +81,7 @@ const GestureController: React.FC<GestureControllerProps> = ({ onGesture }) => {
 
     canvasCtx.save();
     canvasCtx.clearRect(0, 0, width, height);
-    
+
     // Draw landmarks
     if (results.multiHandLandmarks) {
       for (const landmarks of results.multiHandLandmarks) {
@@ -94,7 +98,7 @@ const GestureController: React.FC<GestureControllerProps> = ({ onGesture }) => {
             radius: 3
           });
         }
-        
+
         // Draw bounding box for visual feedback
         const xValues = landmarks.map((l: any) => l.x);
         const yValues = landmarks.map((l: any) => l.y);
@@ -121,7 +125,7 @@ const GestureController: React.FC<GestureControllerProps> = ({ onGesture }) => {
     }
 
     const landmarks = results.multiHandLandmarks[0];
-    
+
     // Landmark Indices:
     // 0: Wrist
     // 4: Thumb Tip
@@ -134,26 +138,26 @@ const GestureController: React.FC<GestureControllerProps> = ({ onGesture }) => {
 
     // Distance calculations
     const pinchDistance = Math.sqrt(
-      Math.pow(thumbTip.x - indexTip.x, 2) + 
+      Math.pow(thumbTip.x - indexTip.x, 2) +
       Math.pow(thumbTip.y - indexTip.y, 2)
     );
 
     const palmSpread = Math.sqrt(
-      Math.pow(indexTip.x - pinkyTip.x, 2) + 
+      Math.pow(indexTip.x - pinkyTip.x, 2) +
       Math.pow(indexTip.y - pinkyTip.y, 2)
     );
-    
+
     // --- 1. OPEN PALM DETECTION (Toggle Orbits) ---
     // If pinch distance is large (fingers apart) AND palm spread is large
     if (pinchDistance > 0.3 && palmSpread > 0.3) {
       openPalmFrameCount.current += 1;
       if (openPalmFrameCount.current > 15) { // ~0.5s hold
-         if (now - lastGestureTime.current > 1500) {
-             onGesture({ type: GestureType.OPEN_PALM, confidence: 0.9, zoomFactor: 0 });
-             lastGestureTime.current = now;
-             openPalmFrameCount.current = 0; 
-             return;
-         }
+        if (now - lastGestureTime.current > 1500) {
+          onGesture({ type: GestureType.OPEN_PALM, confidence: 0.9, zoomFactor: 0 });
+          lastGestureTime.current = now;
+          openPalmFrameCount.current = 0;
+          return;
+        }
       }
     } else {
       openPalmFrameCount.current = 0;
@@ -161,7 +165,7 @@ const GestureController: React.FC<GestureControllerProps> = ({ onGesture }) => {
 
     // --- 2. PINCH & TWIST DETECTION (Zoom & Rotate) ---
     if (pinchDistance < 0.2) { // Fingers close enough to be interacting
-      
+
       // Calculate Angle for Twist (Rotation)
       // Angle in radians between the thumb and index finger vector
       const dy = indexTip.y - thumbTip.y;
@@ -174,29 +178,29 @@ const GestureController: React.FC<GestureControllerProps> = ({ onGesture }) => {
         // Normalize -PI to PI
         if (diff > Math.PI) diff -= 2 * Math.PI;
         if (diff < -Math.PI) diff += 2 * Math.PI;
-        
+
         // Threshold to ignore jitter
         if (Math.abs(diff) > 0.02) {
-            rotationDelta = diff;
+          rotationDelta = diff;
         }
       }
       lastAngle.current = currentAngle;
 
       // If rotating significantly, prefer rotation over zoom
       if (Math.abs(rotationDelta) > 0.05) {
-          onGesture({ 
-            type: GestureType.ROTATE, 
-            confidence: 0.8, 
-            zoomFactor: pinchDistance,
-            rotationDelta: rotationDelta
-          });
-          return;
-      } 
-      
+        onGesture({
+          type: GestureType.ROTATE,
+          confidence: 0.8,
+          zoomFactor: pinchDistance,
+          rotationDelta: rotationDelta
+        });
+        return;
+      }
+
       // Otherwise treat as Zoom (Pinch)
-      onGesture({ 
-        type: GestureType.PINCH, 
-        confidence: 0.9, 
+      onGesture({
+        type: GestureType.PINCH,
+        confidence: 0.9,
         zoomFactor: pinchDistance, // Pass raw distance, UI maps it
         rotationDelta: 0
       });
@@ -211,8 +215,8 @@ const GestureController: React.FC<GestureControllerProps> = ({ onGesture }) => {
     lastPalmX.current = palmX;
 
     if (now - lastGestureTime.current > 500) {
-      const swipeThreshold = 0.05; 
-      
+      const swipeThreshold = 0.05;
+
       if (deltaX > swipeThreshold) {
         onGesture({ type: GestureType.SWIPE_LEFT, confidence: 0.8, zoomFactor: 0 });
         lastGestureTime.current = now;
@@ -234,7 +238,7 @@ const GestureController: React.FC<GestureControllerProps> = ({ onGesture }) => {
           className="absolute inset-0 w-full h-full object-cover"
           playsInline
         />
-        <canvas 
+        <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full"
           width={640}
